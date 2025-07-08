@@ -92,7 +92,7 @@ genai-news-research/
 ├── requirements.txt
 ├── .gitignore
 ├── .streamlit/
-│   └── secrets_template.toml  # Sample only, don't include real keys
+│   └── secrets_template.toml  
 
 
 📸 Screenshot
