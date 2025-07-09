@@ -16,10 +16,13 @@ nltk_data_dir = os.path.expanduser('~/nltk_data')
 os.makedirs(nltk_data_dir, exist_ok=True)
 nltk.data.path.append(nltk_data_dir)
 
-# Ensure punkt + punkt_tab are downloaded
-for resource in ['punkt', 'punkt_tab']:
+# Ensure all required NLTK resources are downloaded
+for resource in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger_eng']:
     try:
-        nltk.data.find(f'tokenizers/{resource}')
+        if resource == 'averaged_perceptron_tagger_eng':
+            nltk.data.find(f'taggers/{resource}')
+        else:
+            nltk.data.find(f'tokenizers/{resource}')
     except LookupError:
         nltk.download(resource, download_dir=nltk_data_dir)
 
