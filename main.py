@@ -1,7 +1,7 @@
 import streamlit as st
 import os
-import nltk
 import shutil
+import nltk
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import UnstructuredURLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -9,32 +9,21 @@ from langchain_community.vectorstores import FAISS
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQAWithSourcesChain, LLMChain
 
-# title
+# Title
 st.set_page_config(page_title="Gen AI News Research", layout="wide")
-
-# NLTK setup
-nltk_data_dir = os.path.expanduser('~/nltk_data')
-os.makedirs(nltk_data_dir, exist_ok=True)
-nltk.data.path.append(nltk_data_dir)
-
-# Ensure all required NLTK resources are downloaded
-for resource in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger_eng']:
-    try:
-        if resource == 'averaged_perceptron_tagger_eng':
-            nltk.data.find(f'taggers/{resource}')
-        else:
-            nltk.data.find(f'tokenizers/{resource}')
-    except LookupError:
-        nltk.download(resource, download_dir=nltk_data_dir)
-
-# Gemini API key
-os.environ["GOOGLE_API_KEY"] = st.secrets["api_key"]
-
-# UI
 st.title("Gen AI: News Research Tool")
 st.sidebar.title("🔗 Add News URLs")
 
-# Session State
+# NLTK Setup
+nltk_data_dir = os.path.expanduser('~/nltk_data')
+os.makedirs(nltk_data_dir, exist_ok=True)
+nltk.data.path.append(nltk_data_dir)
+nltk.download('punkt', download_dir=nltk_data_dir)
+
+# Gemini API Key
+os.environ["GOOGLE_API_KEY"] = st.secrets["api_key"]
+
+# Session State Initialization
 st.session_state.setdefault("URLS_INPUT", [])
 st.session_state.setdefault("check", False)
 st.session_state.setdefault("vectorindex_openai", None)
@@ -49,7 +38,7 @@ for i in range(3):
     if url and url not in st.session_state.URLS_INPUT:
         st.session_state.URLS_INPUT.append(url)
 
-#  Clearing  URLs data
+# Clear URLs
 if st.sidebar.button("🔄 Clear URLs data"):
     st.session_state.URLS_INPUT.clear()
     st.session_state.check = False
@@ -81,24 +70,28 @@ if st.sidebar.button("✅ Process URLs"):
                 url_doc_map.setdefault(url, []).append(doc)
 
             st.session_state.docs_map = url_doc_map
-
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
-            # Ensure the directory is clean and exists
-            faiss_path = "faiss_index"
-            if os.path.exists(faiss_path):
-                shutil.rmtree(faiss_path)
-            os.makedirs(faiss_path, exist_ok=True)
+            # Load or rebuild FAISS index
+            if os.path.exists("faiss_index"):
+                try:
+                    st.session_state.vectorindex_openai = FAISS.load_local("faiss_index", embeddings)
+                    st.success("✅ FAISS index loaded from cache.")
+                except Exception as e:
+                    st.warning("⚠️ Failed to load cached FAISS index. Rebuilding...")
+                    shutil.rmtree("faiss_index", ignore_errors=True)
+                    st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
+                    st.session_state.vectorindex_openai.save_local("faiss_index")
+                    st.success("✅ FAISS index rebuilt and cached.")
+            else:
+                st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
+                st.session_state.vectorindex_openai.save_local("faiss_index")
+                st.success("✅ FAISS index built and saved.")
 
-            # Create and save FAISS index
-            vectorstore = FAISS.from_documents(all_docs, embeddings)
-            vectorstore.save_local(faiss_path)
-            st.session_state.vectorindex_openai = vectorstore
             st.session_state.check = True
-            st.success("✅ Articles processed successfully!")
 
-# Main Interaction
+# Main Q&A Interface
 if st.session_state.check:
     urls = list(st.session_state.docs_map.keys())
     selected_urls = st.multiselect("📚 Choose articles to analyze:", urls)
@@ -108,7 +101,8 @@ if st.session_state.check:
         for url in selected_urls:
             combined_docs.extend(st.session_state.docs_map[url])
 
-        vectorstore = st.session_state.vectorindex_openai
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        vectorstore = FAISS.from_documents(combined_docs, embeddings)
 
         query = st.text_input("💬 Ask a question or request a summary:")
 
@@ -161,23 +155,35 @@ if st.session_state.check:
                 st.markdown(comparison_table, unsafe_allow_html=True)
 
         if query:
-            st.write("Query:", query)
-            docs = vectorstore.similarity_search(query, k=3)
-            st.write("🔍 Retrieved Docs:", [doc.page_content[:200] for doc in docs])
+            lower_query = query.lower().strip()
+            if "compare" in lower_query and len(selected_urls) >= 2:
+                all_texts = ["\n".join([doc.page_content for doc in st.session_state.docs_map[url]]) for url in selected_urls]
+                compare_prompt = f"Compare the following articles:\n\nARTICLE 1:\n{all_texts[0]}\n\nARTICLE 2:\n{all_texts[1]}\n\n{query}"
+                with st.spinner("🔍 Comparing articles..."):
+                    answer = llm.invoke(compare_prompt).content
+                st.session_state.chat_history.append((query, answer, selected_urls))
+            elif any(word in lower_query for word in ["summarize", "summary", "summarise"]):
+                full_text = "\n".join([doc.page_content for doc in combined_docs])
+                prompt = PromptTemplate(
+                    input_variables=["content"],
+                    template="Summarize the following content:\n\n{content}\n\nSummary:"
+                )
+                summarize_chain = LLMChain(llm=llm, prompt=prompt)
+                with st.spinner("📋 Summarizing..."):
+                    answer = summarize_chain.run({"content": full_text})
+                    st.session_state.chat_history.append((query, answer, selected_urls))
+            else:
+                chain = RetrievalQAWithSourcesChain.from_llm(
+                    llm=llm,
+                    retriever=vectorstore.as_retriever()
+                )
+                with st.spinner("🔍 Searching..."):
+                    response = chain({"question": query}, return_only_outputs=True)
+                answer = response['answer']
+                sources = response['sources'].split(', ') if response['sources'] else selected_urls
+                st.session_state.chat_history.append((query, answer, sources))
 
-            chain = RetrievalQAWithSourcesChain.from_llm(
-                llm=llm,
-                retriever=vectorstore.as_retriever()
-            )
-            with st.spinner("🔍 Searching..."):
-                response = chain({"question": query}, return_only_outputs=True)
-            st.write("🔁 Raw LLM Response:", response)
-            answer = response['answer']
-            sources = response['sources'].split(', ') if response['sources'] else selected_urls
-            st.markdown(f"**✅ Answer:** {answer}")
-            st.session_state.chat_history.append((query, answer, sources))
-
-# Live Chat History Display
+# Chat History Display
 if st.session_state.chat_history:
     st.markdown("### 📟 Chat History")
     for idx, (q, a, sources) in enumerate(reversed(st.session_state.chat_history)):
@@ -189,6 +195,7 @@ if st.session_state.chat_history:
                 for src in sources:
                     st.markdown(f"- [{src}]({src})")
 
+# Clear Chat History
 if 'clear_chat' in locals() and clear_chat:
     st.session_state.chat_history = []
     st.success("Chat history cleared.")
