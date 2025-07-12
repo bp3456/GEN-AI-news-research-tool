@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import nltk
+import shutil
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import UnstructuredURLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -84,7 +85,6 @@ if st.sidebar.button("✅ Process URLs"):
 
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-import shutil
 # Ensure the directory is clean and exists
 faiss_path = "faiss_index"
 if os.path.exists(faiss_path):
