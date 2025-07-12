@@ -8,31 +8,15 @@ from langchain_community.vectorstores import FAISS
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQAWithSourcesChain, LLMChain
 
-# title
+# Streamlit config
 st.set_page_config(page_title="Gen AI News Research", layout="wide")
- 
+
 # NLTK setup
-nltk_data_dir = os.path.expanduser('~/nltk_data')
-os.makedirs(nltk_data_dir, exist_ok=True)
-nltk.data.path.append(nltk_data_dir)
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 
-# Ensure all required NLTK resources are downloaded
-for resource in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger_eng']:
-    try:
-        if resource == 'averaged_perceptron_tagger_eng':
-            nltk.data.find(f'taggers/{resource}')
-        else:
-            nltk.data.find(f'tokenizers/{resource}')
-    except LookupError:
-        nltk.download(resource, download_dir=nltk_data_dir)
-
-
-#Gemini API key
+# Gemini API key
 os.environ["GOOGLE_API_KEY"] = st.secrets["api_key"]
-
-# UI
-st.title("Gen AI: News Research Tool")
-st.sidebar.title("🔗 Add News URLs")
 
 # Session State
 st.session_state.setdefault("URLS_INPUT", [])
@@ -41,15 +25,19 @@ st.session_state.setdefault("vectorindex_openai", None)
 st.session_state.setdefault("docs_map", {})
 st.session_state.setdefault("chat_history", [])  
 
+# LLM instance
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7)
 
-# Sidebar URL Input
+# Sidebar URL input
+st.title("Gen AI: News Research Tool")
+st.sidebar.title("🔗 Add News URLs")
+
 for i in range(3):
     url = st.sidebar.text_input(f"URL {i+1}", key=f"url_input_{i+1}")
     if url and url not in st.session_state.URLS_INPUT:
         st.session_state.URLS_INPUT.append(url)
 
-#  Clearing  URLs data
+# Clear URLs
 if st.sidebar.button("🔄 Clear URLs data"):
     st.session_state.URLS_INPUT.clear()
     st.session_state.check = False
@@ -84,13 +72,16 @@ if st.sidebar.button("✅ Process URLs"):
 
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-            st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
-            st.session_state.vectorindex_openai.save_local("faiss_index")
+            vector_index_dir = "faiss_index"
+            os.makedirs(vector_index_dir, exist_ok=True)
+            faiss_index = FAISS.from_documents(all_docs, embeddings)
+            faiss_index.save_local(vector_index_dir)
 
+            st.session_state.vectorindex_openai = faiss_index
             st.session_state.check = True
-            st.success("✅ Articles processed successfully!")
+            st.success("✅ Articles processed and vector index saved!")
 
-# Main Interaction
+# Main interaction
 if st.session_state.check:
     urls = list(st.session_state.docs_map.keys())
     selected_urls = st.multiselect("📚 Choose articles to analyze:", urls)
@@ -124,7 +115,6 @@ if st.session_state.check:
                 suggestions = chain.run({"content": full_text})
                 st.markdown(suggestions)
 
-        # compare button
         if compare_button:
             if len(selected_urls) < 2:
                 st.warning("Please select at least two articles to compare.")
@@ -134,7 +124,6 @@ if st.session_state.check:
                 with st.spinner("🔍 Comparing articles..."):
                     compare_result = llm.invoke(compare_prompt).content
                 st.session_state.chat_history.append(("Compare Articles", compare_result, selected_urls))
-                st.markdown("### 📊 Comparison Result")
 
                 article_1_lines = []
                 article_2_lines = []
@@ -152,9 +141,9 @@ if st.session_state.check:
                 for left, right in zip(article_1_lines, article_2_lines):
                     comparison_table += f"<tr><td style='border:1px solid #ccc;padding:8px;'>{left}</td><td style='border:1px solid #ccc;padding:8px;'>{right}</td></tr>"
                 comparison_table += "</table>"
+                st.markdown("### 📊 Comparison Result")
                 st.markdown(comparison_table, unsafe_allow_html=True)
 
-        # Answer query
         if query:
             lower_query = query.lower().strip()
             if "compare" in lower_query and len(selected_urls) >= 2:
@@ -184,7 +173,7 @@ if st.session_state.check:
                 sources = response['sources'].split(', ') if response['sources'] else selected_urls
                 st.session_state.chat_history.append((query, answer, sources))
 
-# Live Chat History Display
+# Chat history
 if st.session_state.chat_history:
     st.markdown("### 📟 Chat History")
     for idx, (q, a, sources) in enumerate(reversed(st.session_state.chat_history)):
@@ -198,7 +187,7 @@ if st.session_state.chat_history:
 else:
     st.info("")
 
-# Clear Chat History
+# Clear chat
 if 'clear_chat' in locals() and clear_chat:
     st.session_state.chat_history = []
     st.success("Chat history cleared.")
