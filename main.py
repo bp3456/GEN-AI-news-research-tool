@@ -191,4 +191,4 @@ if st.session_state.check:
 
 # Live Chat History Display
 if st.session_state.chat_history:
-    st.markdown("### 📟 Chat Hi
+    st.markdown("### 📟 Chat History")
