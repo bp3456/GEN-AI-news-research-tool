@@ -11,7 +11,7 @@ from langchain.chains import RetrievalQAWithSourcesChain, LLMChain
 
 # title
 st.set_page_config(page_title="Gen AI News Research", layout="wide")
- 
+
 # NLTK setup
 nltk_data_dir = os.path.expanduser('~/nltk_data')
 os.makedirs(nltk_data_dir, exist_ok=True)
@@ -39,7 +39,7 @@ st.session_state.setdefault("URLS_INPUT", [])
 st.session_state.setdefault("check", False)
 st.session_state.setdefault("vectorindex_openai", None)
 st.session_state.setdefault("docs_map", {})
-st.session_state.setdefault("chat_history", [])  
+st.session_state.setdefault("chat_history", [])
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7)
 
@@ -85,15 +85,16 @@ if st.sidebar.button("✅ Process URLs"):
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
+            # Ensure the directory is clean and exists
             faiss_path = "faiss_index"
             if os.path.exists(faiss_path):
                 shutil.rmtree(faiss_path)
             os.makedirs(faiss_path, exist_ok=True)
 
+            # Create and save FAISS index
             vectorstore = FAISS.from_documents(all_docs, embeddings)
             vectorstore.save_local(faiss_path)
             st.session_state.vectorindex_openai = vectorstore
-
             st.session_state.check = True
             st.success("✅ Articles processed successfully!")
 
@@ -107,8 +108,7 @@ if st.session_state.check:
         for url in selected_urls:
             combined_docs.extend(st.session_state.docs_map[url])
 
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        vectorstore = FAISS.from_documents(combined_docs, embeddings)
+        vectorstore = st.session_state.vectorindex_openai
 
         query = st.text_input("💬 Ask a question or request a summary:")
 
@@ -161,34 +161,34 @@ if st.session_state.check:
                 st.markdown(comparison_table, unsafe_allow_html=True)
 
         if query:
-            lower_query = query.lower().strip()
-            if "compare" in lower_query and len(selected_urls) >= 2:
-                all_texts = ["\n".join([doc.page_content for doc in st.session_state.docs_map[url]]) for url in selected_urls]
-                compare_prompt = f"Compare the following articles:\n\nARTICLE 1:\n{all_texts[0]}\n\nARTICLE 2:\n{all_texts[1]}\n\n{query}"
-                with st.spinner("🔍 Comparing articles..."):
-                    answer = llm.invoke(compare_prompt).content
-                st.session_state.chat_history.append((query, answer, selected_urls))
-            elif any(word in lower_query for word in ["summarize", "summary", "summarise"]):
-                full_text = "\n".join([doc.page_content for doc in combined_docs])
-                prompt = PromptTemplate(
-                    input_variables=["content"],
-                    template="Summarize the following content:\n\n{content}\n\nSummary:"
-                )
-                summarize_chain = LLMChain(llm=llm, prompt=prompt)
-                with st.spinner("📋 Summarizing..."):
-                    answer = summarize_chain.run({"content": full_text})
-                    st.session_state.chat_history.append((query, answer, selected_urls))
-            else:
-                chain = RetrievalQAWithSourcesChain.from_llm(
-                    llm=llm,
-                    retriever=vectorstore.as_retriever()
-                )
-                with st.spinner("🔍 Searching..."):
-                    response = chain({"question": query}, return_only_outputs=True)
-                answer = response['answer']
-                sources = response['sources'].split(', ') if response['sources'] else selected_urls
-                st.session_state.chat_history.append((query, answer, sources))
+            st.write("Query:", query)
+            docs = vectorstore.similarity_search(query, k=3)
+            st.write("🔍 Retrieved Docs:", [doc.page_content[:200] for doc in docs])
+
+            chain = RetrievalQAWithSourcesChain.from_llm(
+                llm=llm,
+                retriever=vectorstore.as_retriever()
+            )
+            with st.spinner("🔍 Searching..."):
+                response = chain({"question": query}, return_only_outputs=True)
+            st.write("🔁 Raw LLM Response:", response)
+            answer = response['answer']
+            sources = response['sources'].split(', ') if response['sources'] else selected_urls
+            st.markdown(f"**✅ Answer:** {answer}")
+            st.session_state.chat_history.append((query, answer, sources))
 
 # Live Chat History Display
 if st.session_state.chat_history:
     st.markdown("### 📟 Chat History")
+    for idx, (q, a, sources) in enumerate(reversed(st.session_state.chat_history)):
+        with st.container():
+            st.markdown(f"**🗨️ Q{len(st.session_state.chat_history)-idx}:** {q}")
+            st.markdown(f"**✅ A{len(st.session_state.chat_history)-idx}:** {a}")
+            if sources:
+                st.markdown("**🔗 Sources:**")
+                for src in sources:
+                    st.markdown(f"- [{src}]({src})")
+
+if 'clear_chat' in locals() and clear_chat:
+    st.session_state.chat_history = []
+    st.success("Chat history cleared.")
