@@ -89,11 +89,8 @@ if st.sidebar.button("✅ Process URLs"):
 # Ensure the directory exists before saving the index
 os.makedirs("faiss_index", exist_ok=True)
 st.session_state.vectorindex_openai.save_local("faiss_index")
-
-          
-
-            st.session_state.check = True
-            st.success("✅ Articles processed successfully!")
+st.session_state.check = True
+st.success("✅ Articles processed successfully!")
 
 # Main Interaction
 if st.session_state.check:
