@@ -84,12 +84,13 @@ if st.sidebar.button("✅ Process URLs"):
 
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-           st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
+            st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
 
-          # Ensure the directory exists before saving the index
-           os.makedirs("faiss_index", exist_ok=True)
-           st.session_state.vectorindex_openai.save_local("faiss_index")
+# Ensure the directory exists before saving the index
+os.makedirs("faiss_index", exist_ok=True)
+st.session_state.vectorindex_openai.save_local("faiss_index")
 
+          
 
             st.session_state.check = True
             st.success("✅ Articles processed successfully!")
