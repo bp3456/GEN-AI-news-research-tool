@@ -27,8 +27,7 @@ for resource in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger_eng']:
     except LookupError:
         nltk.download(resource, download_dir=nltk_data_dir)
 
-
-#Gemini API key
+# Gemini API key
 os.environ["GOOGLE_API_KEY"] = st.secrets["api_key"]
 
 # UI
@@ -85,17 +84,18 @@ if st.sidebar.button("✅ Process URLs"):
 
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-# Ensure the directory is clean and exists
-faiss_path = "faiss_index"
-if os.path.exists(faiss_path):
-    shutil.rmtree(faiss_path)
-os.makedirs(faiss_path, exist_ok=True)
 
-# Create and save FAISS index
-vectorstore = FAISS.from_documents(all_docs, embeddings)
-vectorstore.save_local(faiss_path)
-st.session_state.vectorindex_openai = vectorstore
-st.success("✅ Articles processed successfully!")
+            faiss_path = "faiss_index"
+            if os.path.exists(faiss_path):
+                shutil.rmtree(faiss_path)
+            os.makedirs(faiss_path, exist_ok=True)
+
+            vectorstore = FAISS.from_documents(all_docs, embeddings)
+            vectorstore.save_local(faiss_path)
+            st.session_state.vectorindex_openai = vectorstore
+
+            st.session_state.check = True
+            st.success("✅ Articles processed successfully!")
 
 # Main Interaction
 if st.session_state.check:
@@ -131,7 +131,6 @@ if st.session_state.check:
                 suggestions = chain.run({"content": full_text})
                 st.markdown(suggestions)
 
-        # compare button
         if compare_button:
             if len(selected_urls) < 2:
                 st.warning("Please select at least two articles to compare.")
@@ -161,7 +160,6 @@ if st.session_state.check:
                 comparison_table += "</table>"
                 st.markdown(comparison_table, unsafe_allow_html=True)
 
-        # Answer query
         if query:
             lower_query = query.lower().strip()
             if "compare" in lower_query and len(selected_urls) >= 2:
@@ -193,19 +191,4 @@ if st.session_state.check:
 
 # Live Chat History Display
 if st.session_state.chat_history:
-    st.markdown("### 📟 Chat History")
-    for idx, (q, a, sources) in enumerate(reversed(st.session_state.chat_history)):
-        with st.container():
-            st.markdown(f"**🗨️ Q{len(st.session_state.chat_history)-idx}:** {q}")
-            st.markdown(f"**✅ A{len(st.session_state.chat_history)-idx}:** {a}")
-            if sources:
-                st.markdown("**🔗 Sources:**")
-                for src in sources:
-                    st.markdown(f"- [{src}]({src})")
-else:
-    st.info("")
-
-# Clear Chat History
-if 'clear_chat' in locals() and clear_chat:
-    st.session_state.chat_history = []
-    st.success("Chat history cleared.")
+    st.markdown("### 📟 Chat Hi
