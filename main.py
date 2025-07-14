@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import shutil
 import nltk
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import UnstructuredURLLoader
@@ -9,26 +8,28 @@ from langchain_community.vectorstores import FAISS
 from langchain.prompts import PromptTemplate
 from langchain.chains import RetrievalQAWithSourcesChain, LLMChain
 
-# Title
+# title
 st.set_page_config(page_title="Gen AI News Research", layout="wide")
-st.title("Gen AI: News Research Tool")
-st.sidebar.title("🔗 Add News URLs")
 
-# NLTK Setup
+# NLTK setup
 nltk_data_dir = os.path.expanduser('~/nltk_data')
 os.makedirs(nltk_data_dir, exist_ok=True)
 nltk.data.path.append(nltk_data_dir)
 nltk.download('punkt', download_dir=nltk_data_dir)
 
-# Gemini API Key
+#Gemini API key
 os.environ["GOOGLE_API_KEY"] = st.secrets["api_key"]
 
-# Session State Initialization
+# UI
+st.title("Gen AI: News Research Tool")
+st.sidebar.title("🔗 Add News URLs")
+
+# Session State
 st.session_state.setdefault("URLS_INPUT", [])
 st.session_state.setdefault("check", False)
 st.session_state.setdefault("vectorindex_openai", None)
 st.session_state.setdefault("docs_map", {})
-st.session_state.setdefault("chat_history", [])
+st.session_state.setdefault("chat_history", [])  
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7)
 
@@ -38,7 +39,7 @@ for i in range(3):
     if url and url not in st.session_state.URLS_INPUT:
         st.session_state.URLS_INPUT.append(url)
 
-# Clear URLs
+#  Clearing  URLs data
 if st.sidebar.button("🔄 Clear URLs data"):
     st.session_state.URLS_INPUT.clear()
     st.session_state.check = False
@@ -70,28 +71,16 @@ if st.sidebar.button("✅ Process URLs"):
                 url_doc_map.setdefault(url, []).append(doc)
 
             st.session_state.docs_map = url_doc_map
+
             all_docs = [doc for sublist in url_doc_map.values() for doc in sublist]
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-
-            # Load or rebuild FAISS index
-            if os.path.exists("faiss_index"):
-                try:
-                    st.session_state.vectorindex_openai = FAISS.load_local("faiss_index", embeddings)
-                    st.success("✅ FAISS index loaded from cache.")
-                except Exception as e:
-                    st.warning("⚠️ Failed to load cached FAISS index. Rebuilding...")
-                    shutil.rmtree("faiss_index", ignore_errors=True)
-                    st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
-                    st.session_state.vectorindex_openai.save_local("faiss_index")
-                    st.success("✅ FAISS index rebuilt and cached.")
-            else:
-                st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
-                st.session_state.vectorindex_openai.save_local("faiss_index")
-                st.success("✅ FAISS index built and saved.")
+            st.session_state.vectorindex_openai = FAISS.from_documents(all_docs, embeddings)
+            st.session_state.vectorindex_openai.save_local("faiss_index")
 
             st.session_state.check = True
+            st.success("✅ Articles processed successfully!")
 
-# Main Q&A Interface
+# Main Interaction
 if st.session_state.check:
     urls = list(st.session_state.docs_map.keys())
     selected_urls = st.multiselect("📚 Choose articles to analyze:", urls)
@@ -125,6 +114,7 @@ if st.session_state.check:
                 suggestions = chain.run({"content": full_text})
                 st.markdown(suggestions)
 
+        # compare button
         if compare_button:
             if len(selected_urls) < 2:
                 st.warning("Please select at least two articles to compare.")
@@ -154,6 +144,7 @@ if st.session_state.check:
                 comparison_table += "</table>"
                 st.markdown(comparison_table, unsafe_allow_html=True)
 
+        # Answer query
         if query:
             lower_query = query.lower().strip()
             if "compare" in lower_query and len(selected_urls) >= 2:
@@ -183,7 +174,7 @@ if st.session_state.check:
                 sources = response['sources'].split(', ') if response['sources'] else selected_urls
                 st.session_state.chat_history.append((query, answer, sources))
 
-# Chat History Display
+# Live Chat History Display
 if st.session_state.chat_history:
     st.markdown("### 📟 Chat History")
     for idx, (q, a, sources) in enumerate(reversed(st.session_state.chat_history)):
@@ -194,6 +185,8 @@ if st.session_state.chat_history:
                 st.markdown("**🔗 Sources:**")
                 for src in sources:
                     st.markdown(f"- [{src}]({src})")
+else:
+    st.info("")
 
 # Clear Chat History
 if 'clear_chat' in locals() and clear_chat:
